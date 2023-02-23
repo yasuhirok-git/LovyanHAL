@@ -50,7 +50,7 @@ namespace lhal
 
   const volatile uint32_t* const LovyanHAL::GPIO_HAL::RAW::_read_reg[] =
   {
-    (static_cast<const volatile uint32_t* >( 333&sio_hw->gpio_in)),
+    (static_cast<const volatile uint32_t* >( &sio_hw->gpio_in)),
   };
 
   void LovyanHAL::GPIO_HAL::setMode(gpio_port_pin_t pin, LovyanHAL::GPIO_HAL::mode_t mode)
@@ -110,19 +110,49 @@ namespace lhal
     }
   }
 
-  static void setFunction(gpio_port_pin_t pin, enum gpio_function f)
+  // ref 2.19.5.1. Select an IO function
+  void LovyanHAL::GPIO_HAL::setFunction(gpio_port_pin_t pin, enum gpio_function f)
   {
     uint32_t num = static_cast<uint32_t>(pin);
     if (num >= NUM_BANK0_GPIOS) {
       return;
     }
-    if ((((uint32_t)fn << IO_BANK0_GPIO0_CTRL_FUNCSEL_LSB) & ~IO_BANK0_GPIO0_CTRL_FUNCSEL_BITS) != 0)
+    if ((((uint32_t)f << IO_BANK0_GPIO0_CTRL_FUNCSEL_LSB) & ~IO_BANK0_GPIO0_CTRL_FUNCSEL_BITS) != 0)
     {
       return;
     }
     volatile iobank0_hw_t * const iobank0_regs = reinterpret_cast<volatile iobank0_hw_t *>(IO_BANK0_BASE);
-  iobank0_regs->io[pin].ctrl = fn << IO_BANK0_GPIO0_CTRL_FUNCSEL_LSB;
+  iobank0_regs->io[pin].ctrl = f << IO_BANK0_GPIO0_CTRL_FUNCSEL_LSB;
   }
+
+   GPIO_host::GPIO_host(const gpio_port_pin_t pp) :
+      _reg_clr { LovyanHAL::GPIO_HAL::RAW::getClrReg(pp.port) },
+      _reg_set { LovyanHAL::GPIO_HAL::RAW::getSetReg(pp.port) },
+      _reg_oe_clr { LovyanHAL::GPIO_HAL::RAW::getOeClrReg(pp.port) },
+      _reg_oe_set { LovyanHAL::GPIO_HAL::RAW::getOeSetReg(pp.port) },
+      _reg_input { LovyanHAL::GPIO_HAL::RAW::getReadReg(pp.port) },
+      _pin_mask { pp.getMask() },
+      _gpio_pin { pp },
+      _is_od { false }
+    {};
+
+  GPIO_host::GPIO_host() :
+      _reg_clr { nullptr },
+      _reg_set { nullptr },
+      _reg_oe_clr { nullptr },
+      _reg_oe_set { nullptr },
+      _reg_input { nullptr },
+      _pin_mask { 0U },
+      _gpio_pin { },
+      _is_od { false }
+    {};
+
+  void GPIO_host::setMode(LovyanHAL::GPIO_HAL::mode_t mode)
+  {
+    _is_od = (mode & gpio::mode_t::output_opendrain) != 0;
+    LovyanHAL::Gpio.setMode(_gpio_pin, mode);
+  }
+
  }
 }
 

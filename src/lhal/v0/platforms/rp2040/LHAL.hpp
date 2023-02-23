@@ -38,8 +38,8 @@ namespace lhal
       public:
         static inline volatile uint32_t* getSetReg(gpio::port_num_t port = 0) { return _set_reg[port]; };
         static inline volatile uint32_t* getClrReg(gpio::port_num_t port = 0) { return _clr_reg[port]; };
-        static inline volatile uint32_t* getOeSetReg(gpio::port_num_t port = 0) { return _set_oe_reg[port]; };
-        static inline volatile uint32_t* getOeClrReg(gpio::port_num_t port = 0) { return _clr_oe_reg[port]; };
+        static inline volatile uint32_t* getOESetReg(gpio::port_num_t port = 0) { return _set_oe_reg[port]; };
+        static inline volatile uint32_t* getOEClrReg(gpio::port_num_t port = 0) { return _clr_oe_reg[port]; };
         static inline const volatile uint32_t* getReadReg(gpio::port_num_t port = 0) { return _read_reg[port]; };
       };
       static RAW Raw;
@@ -53,14 +53,14 @@ namespace lhal
           *RAW::getClrReg(port) = bitmask;
         }
       }
-      static inline void writeMaskOeSet(gpio::port_num_t port, gpio::pin_mask_t bitmask) { *RAW::getOeSetReg(port) = bitmask; };
-      static inline void writeMaskOeClr(gpio::port_num_t port, gpio::pin_mask_t bitmask) { *RAW::getOeClrReg(port) = bitmask; };
-      static inline void writeMaskOe(gpio::port_num_t port, gpio::pin_mask_t bitmask, bool value)
+      static inline void writeMaskOESet(gpio::port_num_t port, gpio::pin_mask_t bitmask) { *RAW::getOESetReg(port) = bitmask; };
+      static inline void writeMaskOEClr(gpio::port_num_t port, gpio::pin_mask_t bitmask) { *RAW::getOEClrReg(port) = bitmask; };
+      static inline void writeMaskOE(gpio::port_num_t port, gpio::pin_mask_t bitmask, bool value)
       {
         if (value) {
-          *RAW::getOeSetReg(port) = bitmask;
+          *RAW::getOESetReg(port) = bitmask;
         } else {
-          *RAW::getOeClrReg(port) = bitmask;
+          *RAW::getOEClrReg(port) = bitmask;
         }
       }
 
@@ -75,33 +75,40 @@ namespace lhal
         }
         else
         {
-          writeMaskOeClr(pp.port, mask);
+          writeMaskOEClr(pp.port, mask);
         }
       }
+
       static inline void writeLow(gpio_port_pin_t pp)
       {
-        const gpio::pin_mask_t mask = pp.getMask();
+        const gpio::pin_mask_t mask =  pp.getMask();
         if ((mask & _is_od[pp.port]) == 0)
         {
           writeMaskLow(pp.port, mask);
         }
         else
         {
-          writeMaskOeSet(pp.port, mask);
+          writeMaskOESet(pp.port, mask);
         }
       }
-      static inline void write(gpio_port_pin_t pp, bool value)
+
+      static inline void write(gpio_port_pin_t pp, bool value, gpio::pin_mask_t mask)
       {
-        const gpio::pin_mask_t mask = pp.getMask();
         if ((mask & _is_od[pp.port]) == 0)
         {
           writeMask(pp.port, mask, value); 
         }
         else
         {
-          writeMaskOe(pp.port, mask, !value); 
+          writeMaskOE(pp.port, mask, !value); 
         }
       }
+
+      static inline void write(gpio_port_pin_t pp, bool value)
+      {
+        write(pp, value, pp.getMask());
+      }
+
       static inline bool read(gpio_port_pin_t pp) { return readMask(pp.port, pp.getMask()); }
 
       static void setMode(gpio_port_pin_t pp, LovyanHAL::GPIO_HAL::mode_t mode);
@@ -115,10 +122,10 @@ namespace lhal
 
     static GPIO_HAL Gpio;
 
-    static constexpr error_t init(void) { return error_t::err_ok; }
+    static constexpr error_t init() { return error_t::err_ok; }
     static inline void delay(uint32_t msec) { ::delay(msec); }
 
-    static inline uint32_t getCpuFrequency(void) { return clock_get_hz(clk_sys); }
+    static inline uint32_t getCpuFrequency() { return clock_get_hz(clk_sys); }
     /// Arduino環境のピン番号からMCUのポート+ピン番号に変換する…ESP32はMCUピン番号がそのままArduinoのピン番号となっているので変換が不要;
     static constexpr gpio_port_pin_t convertArduinoPinNumber(int arduino_pin_number)
     {
@@ -129,33 +136,99 @@ namespace lhal
 
   class GPIO_host
   {
+  private:
+    inline void writeNormalHigh()
+    {
+      *_reg_set = _pin_mask;
+    }
+
+    inline void writeNormalLow()
+    {
+      *_reg_clr = _pin_mask;
+    }
+
+    inline void writeODHigh()
+    {
+      *_reg_oe_clr = _pin_mask;
+    }
+
+    inline void writeODLow()
+    {
+      *_reg_oe_set = _pin_mask;
+    }
+
+    inline void writeOD(bool value)
+    {
+      if (value)
+      {
+        writeODHigh();
+      }
+      else
+      {
+        writeODLow();
+      }
+    }
+
     volatile uint32_t* _reg_clr;
     volatile uint32_t* _reg_set;
+    volatile uint32_t* _reg_oe_clr;
+    volatile uint32_t* _reg_oe_set;
     const volatile uint32_t* _reg_input;
     gpio::pin_mask_t _pin_mask;
     gpio_port_pin_t _gpio_pin;
+    bool _is_od;
 
   public:
 
-    GPIO_host(gpio_port_pin_t pp) :
-      _reg_clr { LovyanHAL::GPIO_HAL::RAW::getClrReg(pp.port) },
-      _reg_set { LovyanHAL::GPIO_HAL::RAW::getSetReg(pp.port) },
-      _reg_input { LovyanHAL::GPIO_HAL::RAW::getReadReg(pp.port) },
-      _pin_mask { pp.getMask() },
-      _gpio_pin { pp }
-    {};
+    GPIO_host(const gpio_port_pin_t pp);
+    GPIO_host();
 
-    void setMode(LovyanHAL::GPIO_HAL::mode_t mode) { LovyanHAL::Gpio.setMode(_gpio_pin, mode); }
+    void setMode(LovyanHAL::GPIO_HAL::mode_t mode);
 
+    void writeHigh()
+    {
+      if (_is_od)
+      {
+        writeODHigh();
+      }
+      else
+      {
+        writeNormalHigh();
+      }
+    }
 
-    void writeHigh(void) { *LovyanHAL::GPIO_HAL::RAW::getSetReg() = _pin_mask; }
-    void writeLow(void) { *LovyanHAL::GPIO_HAL::RAW::getClrReg() = _pin_mask; }
-    void write(bool value) { *(value ? LovyanHAL::GPIO_HAL::RAW::getSetReg() : LovyanHAL::GPIO_HAL::RAW::getClrReg()) = _pin_mask; }
-    bool read(void) { return *LovyanHAL::GPIO_HAL::RAW::getReadReg() & _pin_mask; }
+    void writeLow()
+    {
+      if (_is_od)
+      {
+        writeODLow();
+      }
+      else
+      {
+        writeNormalLow();
+      }
+    }
 
+    void write(bool value)
+    {
+      if (value)
+      {
+        writeHigh();
+      }
+      else
+      {
+        writeLow();
+      }
+    }
+
+    inline bool read()
+    {
+      return ((*_reg_input & _pin_mask) != 0);
+    }
+ 
 //*
-    inline void writeI2CHigh(void) { writeHigh(); }
-    inline void writeI2CLow(void) { writeLow(); }
+    inline void writeI2CHigh() { writeODHigh(); }
+    inline void writeI2CLow() { writeODLow(); }
     inline void writeI2C(bool value) { write(value); }
 /*/
     inline void writeI2CHigh(void) { setMode(LovyanHAL::GPIO_HAL::input_pullup); }
